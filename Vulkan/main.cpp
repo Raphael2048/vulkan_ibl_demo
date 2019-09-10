@@ -17,7 +17,6 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
-#include <array>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -26,8 +25,8 @@ const int WIDTH = 800;
 const int HEIGHT = 600;
 
 const std::string MODEL_PATH = "models/chalet.obj";
-const std::string TEXTURE_PATH = "textures/chalet.jpg";
-
+// const std::string TEXTURE_PATH = "textures/chalet.jpg";
+const std::string TEXTURE_PATH = "textures/albedo.png";
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 #ifdef NDEBUG
@@ -228,7 +227,8 @@ private:
         vulkan_util::createTextureImage( physicalDevice,  device,  commandPool,  graphicsQueue, TEXTURE_PATH, textureImage, textureImageMemory);
         vulkan_util::createTextureImageView(device, textureImage, textureImageView);
         vulkan_util::createTextureSampler(device, textureSampler);
-        loadModel();
+        //loadModel();
+        sphereData();
         createVertexBuffer();
         createIndexBuffer();
         vulkan_util::createUniformBuffers(physicalDevice, device, swapChainImages, uniformBuffers, sizeof(UniformBufferObject), uniformBuffersMemory);
@@ -342,7 +342,77 @@ private:
         createCommandBuffers();
     }
     
-    
+    void sphereData() {
+        const unsigned int X_SEGMENTS = 64;
+        const unsigned int Y_SEGMENTS = 64;
+        const float PI = 3.14159265359;
+        vertices.clear();
+        indices.clear();
+        for (unsigned int y = 0; y <= Y_SEGMENTS; ++y)
+        {
+            for (unsigned int x = 0; x <= X_SEGMENTS; ++x)
+            {
+                float xSegment = (float)x / (float)X_SEGMENTS;
+                float ySegment = (float)y / (float)Y_SEGMENTS;
+                float xPos = std::cos(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
+                float yPos = std::cos(ySegment * PI);
+                float zPos = std::sin(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
+                Vertex v;
+                v.pos = (glm::vec3(xPos, yPos, zPos));
+                v.color = (glm::vec3(xPos, yPos, zPos));
+                v.texCoord = glm::vec2(xSegment, ySegment);
+                vertices.push_back(v);
+            }
+        }
+        bool oddRow = false;
+        for (int y = 0; y < Y_SEGMENTS; ++y)
+        {
+            if (!oddRow) // even rows: y == 0, y == 2; and so on
+            {
+                for (int x = 0; x <= X_SEGMENTS; ++x)
+                {
+                    indices.push_back(y       * (X_SEGMENTS + 1) + x);
+                    indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
+                }
+            }
+            else
+            {
+                for (int x = X_SEGMENTS; x >= 0; --x)
+                {
+                    indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
+                    indices.push_back(y       * (X_SEGMENTS + 1) + x);
+                }
+            }
+            oddRow = !oddRow;
+        }
+    }
+
+    void cubeData() {
+        vertices = {
+            {{ 0.5f,  0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {1.0f, 1.0f} },
+            {{ 0.5f,  0.5f, -0.5f},   {0.0f, 1.0f, 0.0f},   {1.0f, 0.0f} },
+            {{ 0.5f, -0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {0.0f, 1.0f} },
+            {{ 0.5f, -0.5f, -0.5f},   {1.0f, 0.0f, 0.0f},   {0.0f, 0.0f} },
+            {{-0.5f,  0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {1.0f, 1.0f} },
+            {{-0.5f,  0.5f, -0.5f},   {0.0f, 1.0f, 0.0f},   {0.0f, 1.0f} },
+            {{-0.5f, -0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {1.0f, 0.0f} },
+            {{-0.5f, -0.5f, -0.5f},   {1.0f, 0.0f, 0.0f},   {0.0f, 0.0f} },
+        };
+        indices = {
+            0, 3, 1,
+            3, 0, 2, // front
+            4, 1, 5,
+            1, 4, 0,// right
+            4, 2, 0,
+            2, 4, 6,//top
+            2, 7, 3,
+            7, 2, 6,// left
+            7, 1, 5,
+            1, 7, 3, // bottom
+            4, 7, 6,
+            7, 4, 5, // back
+        };
+    }
     
     void loadModel() {
         tinyobj::attrib_t attrib;
@@ -388,7 +458,7 @@ private:
         
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
-       vulkan_util::createBuffer(physicalDevice, device, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        vulkan_util::createBuffer(physicalDevice, device, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
         
         void* data;
         vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
