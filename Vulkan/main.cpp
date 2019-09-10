@@ -7,7 +7,7 @@
 #include <glm/gtx/hash.hpp>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
-
+#include "camera.h"
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -87,6 +87,9 @@ struct UniformBufferObject {
 
 class HelloTriangleApplication {
 public:
+    Camera camera = Camera(glm::vec3(0.0f, 0.0f, 3.0f));
+    bool firstMouse = true;
+    double lastX, lastY;
     void run() {
         initWindow();
         initVulkan();
@@ -95,6 +98,9 @@ public:
     }
     
 private:
+
+    float deltaTime;
+    float lastFrame;
     GLFWwindow* window;
     
     VkInstance instance;
@@ -159,12 +165,50 @@ private:
         
         window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
         glfwSetWindowUserPointer(window, this);
-        glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+        glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+        glfwSetCursorPosCallback(window, mouse_callback);
+        glfwSetScrollCallback(window, scroll_callback);
+        //glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
-    
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+    {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->camera.ProcessMouseScroll(yoffset);
+    }
+    static void mouse_callback(GLFWwindow * window, double xpos, double ypos) {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        if (app -> firstMouse) {
+            app->lastX = xpos;
+            app->lastY = ypos;
+            app->firstMouse = false;
+        }
+        float xoffset = xpos - app->lastX;
+        float yoffset = app->lastY - ypos; // reversed since y-coordinates go from bottom to top
+
+        app->lastX = xpos;
+        app->lastY = ypos;
+
+        app->camera.ProcessMouseMovement(xoffset, yoffset);
+    }
+    static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
         auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
+    }
+
+    void processInput(GLFWwindow *window)
+    {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
+
+        float cameraSpeed = 2.5 * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.ProcessKeyboard(RIGHT, deltaTime);
     }
     
     void initVulkan() {
@@ -197,6 +241,10 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+             float currentFrame = glfwGetTime();
+            deltaTime = currentFrame - lastFrame;
+            lastFrame = currentFrame;
+            processInput(window);
             drawFrame();
         }
         
@@ -471,7 +519,8 @@ private:
         
         UniformBufferObject ubo = {};
         ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        //ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = camera.GetViewMatrix();
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
         
