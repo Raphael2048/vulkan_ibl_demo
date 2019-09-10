@@ -571,10 +571,8 @@ namespace vulkan_util {
         
         return shaderModule;
     }
-    void createGraphicsPipeline(VkDevice device, VkExtent2D swapChainExtent, VkRenderPass renderPass, const std::string& vertShader, const std::string& fragShader, VkVertexInputBindingDescription bindingDescription, std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions, VkDescriptorSetLayout& descriptorSetLayout, VkPipelineLayout& pipelineLayout, VkPipeline& graphicsPipeline) {
-        // auto vertShaderCode = readFile("shaders/vert.spv");
-        // auto fragShaderCode = readFile("shaders/frag.spv");
-        
+    void createGraphicsPipeline(VkDevice device, VkExtent2D swapChainExtent, VkRenderPass renderPass, const std::string& vertShader, const std::string& fragShader, VkVertexInputBindingDescription bindingDescription, std::vector<VkVertexInputAttributeDescription> attributeDescriptions, VkDescriptorSetLayout& descriptorSetLayout, VkPipelineLayout& pipelineLayout, VkPipeline& graphicsPipeline) {
+     
         auto vertShaderCode = readFile(vertShader);
         auto fragShaderCode = readFile(fragShader);
         VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode);
@@ -596,10 +594,7 @@ namespace vulkan_util {
         
         VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        
-        // auto bindingDescription = Vertex::getBindingDescription();
-        // auto attributeDescriptions = Vertex::getAttributeDescriptions();
-        
+           
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
         vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
