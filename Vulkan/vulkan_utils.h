@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <optional>
+#include <array>
 #include <set>
 #include <unordered_map>
 
@@ -585,7 +586,7 @@ namespace vulkan_util {
         uboLayoutBinding.descriptorCount = 1;
         uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uboLayoutBinding.pImmutableSamplers = nullptr;
-        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         
         VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
         samplerLayoutBinding.binding = 1;
@@ -1045,6 +1046,14 @@ namespace vulkan_util {
             descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             descriptorWrites[0].descriptorCount = 1;
             descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+//            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+//            descriptorWrites[1].dstSet = descriptorSets[i];
+//            descriptorWrites[1].dstBinding = 1;
+//            descriptorWrites[1].dstArrayElement = 0;
+//            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+//            descriptorWrites[1].descriptorCount = 1;
+//            descriptorWrites[1].pBufferInfo = &bufferInfo;
             
             descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptorWrites[1].dstSet = descriptorSets[i];

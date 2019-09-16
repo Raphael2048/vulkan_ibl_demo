@@ -44,7 +44,7 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
 
 struct Vertex {
     glm::vec3 pos;
-    glm::vec3 color;
+    glm::vec3 normal;
     glm::vec2 texCoord;
     
     static VkVertexInputBindingDescription getBindingDescription() {
@@ -59,21 +59,21 @@ struct Vertex {
     static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() {
         std::vector<VkVertexInputAttributeDescription> attributeDescriptions = {
             {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
-            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)},
+            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)},
             {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, texCoord)}
         };
         return attributeDescriptions;
     }
     
     bool operator==(const Vertex& other) const {
-        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+        return pos == other.pos && normal == other.normal && texCoord == other.texCoord;
     }
 };
 
 namespace std {
     template<> struct hash<Vertex> {
         size_t operator()(Vertex const& vertex) const {
-            return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.texCoord) << 1);
+            return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.normal) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.texCoord) << 1);
         }
     };
 }
@@ -82,6 +82,18 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
+    alignas(16) glm::vec3 viewPos;
+    alignas(16) glm::vec3 direction;
+    alignas(16) glm::vec3 ambient;
+    alignas(16) glm::vec3 diffuse;
+    alignas(16) glm::vec3 specular;
+};
+
+struct DirectLight {
+    alignas(16) glm::vec3 direction;
+    alignas(16) glm::vec3 ambient;
+    alignas(16) glm::vec3 diffuse;
+    alignas(16) glm::vec3 specular;
 };
 
 class HelloTriangleApplication {
@@ -220,7 +232,7 @@ private:
         vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
         vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
         vulkan_util::createDescriptorSetLayout(device, descriptorSetLayout);
-        vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/vert.spv", "shaders/frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
+        vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/phong_vert.spv", "shaders/phong_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
         vulkan_util::createCommandPool(physicalDevice, device, surface, commandPool);
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
@@ -359,7 +371,7 @@ private:
                 float zPos = std::sin(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
                 Vertex v;
                 v.pos = (glm::vec3(xPos, yPos, zPos));
-                v.color = (glm::vec3(xPos, yPos, zPos));
+                v.normal = (glm::vec3(xPos, yPos, zPos));
                 v.texCoord = glm::vec2(xSegment, ySegment);
                 vertices.push_back(v);
             }
@@ -441,7 +453,7 @@ private:
                     1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
                 };
                 
-                vertex.color = {1.0f, 1.0f, 1.0f};
+                //vertex.color = {1.0f, 1.0f, 1.0f};
                 
                 if (uniqueVertices.count(vertex) == 0) {
                     uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
@@ -593,6 +605,11 @@ private:
         ubo.view = camera.GetViewMatrix();
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
+        ubo.viewPos = camera.Position;
+        ubo.direction = glm::vec3(1.0f, 1.0f, 1.0f);
+        // ubo.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+        // ubo.diffuse = glm::vec3(0.4f, 0.4f, 0.4f);
+        // ubo.specular = glm::vec3(0.5f, 0.5f, 0.5f);
         
         void* data;
         vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
