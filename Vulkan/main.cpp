@@ -227,7 +227,7 @@ private:
         vulkan_util::createSwapChain(physicalDevice, surface, window, device, swapChain, swapChainImages, swapChainImageFormat, swapChainExtent);
         vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
         vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
-        vulkan_util::createDescriptorSetLayout(device, descriptorSetLayout);
+        createDescriptorSetLayout(device, descriptorSetLayout);
         vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/pbr_vert.spv", "shaders/pbr_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
         vulkan_util::createCommandPool(physicalDevice, device, surface, commandPool);
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
@@ -240,8 +240,8 @@ private:
         createVertexBuffer();
         createIndexBuffer();
         vulkan_util::createUniformBuffers(physicalDevice, device, swapChainImages, uniformBuffers, sizeof(UniformBufferObject), uniformBuffersMemory);
-        createDescriptorPool( device, swapChainImages, descriptorPool);
-        createDescriptorSets(device, swapChainImages, descriptorPool, sizeof(UniformBufferObject), descriptorSetLayout, uniformBuffers, textureImageView, textureSampler, descriptorSets);
+        createDescriptorPool(device, swapChainImages, descriptorPool);
+        createDescriptorSets();
         createCommandBuffers();
         createSyncObjects();
     }
@@ -346,7 +346,7 @@ private:
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         vulkan_util::createUniformBuffers(physicalDevice, device, swapChainImages, uniformBuffers, sizeof(UniformBufferObject), uniformBuffersMemory);
         createDescriptorPool( device, swapChainImages, descriptorPool);
-        createDescriptorSets(device, swapChainImages, descriptorPool, sizeof(UniformBufferObject), descriptorSetLayout, uniformBuffers, textureImageView, textureSampler, descriptorSets);
+        createDescriptorSets();
         createCommandBuffers();
     }
     
@@ -674,7 +674,7 @@ private:
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-        void createTextureSampler(VkDevice device, VkSampler& textureSampler) {
+    void createTextureSampler(VkDevice device, VkSampler& textureSampler) {
         VkSamplerCreateInfo samplerInfo = {};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -694,6 +694,33 @@ private:
             throw std::runtime_error("failed to create texture sampler!");
         }
     }
+
+    void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout) {
+        VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+        uboLayoutBinding.binding = 0;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.pImmutableSamplers = nullptr;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        
+        VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
+        samplerLayoutBinding.binding = 1;
+        samplerLayoutBinding.descriptorCount = 1;
+        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerLayoutBinding.pImmutableSamplers = nullptr;
+        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
+        VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+        layoutInfo.pBindings = bindings.data();
+        
+        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+    }
+
     void createDescriptorPool(VkDevice device, std::vector<VkImage>& swapChainImages, VkDescriptorPool& descriptorPool) {
         std::array<VkDescriptorPoolSize, 2> poolSizes = {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -712,7 +739,7 @@ private:
         }
     }
 
-    void createDescriptorSets(VkDevice device, std::vector<VkImage>& swapChainImages, VkDescriptorPool descriptorPool, VkDeviceSize size, const VkDescriptorSetLayout& descriptorSetLayout, std::vector<VkBuffer>& uniformBuffers, VkImageView textureImageView, VkSampler textureSampler, std::vector<VkDescriptorSet>& descriptorSets) {
+    void createDescriptorSets() {
         std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo = {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -729,7 +756,7 @@ private:
             VkDescriptorBufferInfo bufferInfo = {};
             bufferInfo.buffer = uniformBuffers[i];
             bufferInfo.offset = 0;
-            bufferInfo.range = size;
+            bufferInfo.range = sizeof(UniformBufferObject);
             
             VkDescriptorImageInfo imageInfo = {};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
