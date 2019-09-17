@@ -83,10 +83,6 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
     alignas(16) glm::vec3 viewPos;
-    alignas(16) glm::vec3 direction;
-    alignas(16) glm::vec3 ambient;
-    alignas(16) glm::vec3 diffuse;
-    alignas(16) glm::vec3 specular;
 };
 
 struct DirectLight {
@@ -232,20 +228,20 @@ private:
         vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
         vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
         vulkan_util::createDescriptorSetLayout(device, descriptorSetLayout);
-        vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/phong_vert.spv", "shaders/phong_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
+        vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/pbr_vert.spv", "shaders/pbr_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
         vulkan_util::createCommandPool(physicalDevice, device, surface, commandPool);
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         vulkan_util::createTextureImage( physicalDevice,  device,  commandPool,  graphicsQueue, TEXTURE_PATH, textureImage, textureImageMemory);
         vulkan_util::createTextureImageView(device, textureImage, textureImageView);
-        vulkan_util::createTextureSampler(device, textureSampler);
+        createTextureSampler(device, textureSampler);
         //loadModel();
         sphereData();
         createVertexBuffer();
         createIndexBuffer();
         vulkan_util::createUniformBuffers(physicalDevice, device, swapChainImages, uniformBuffers, sizeof(UniformBufferObject), uniformBuffersMemory);
-        vulkan_util::createDescriptorPool( device, swapChainImages, descriptorPool);
-        vulkan_util::createDescriptorSets(device, swapChainImages, descriptorPool, sizeof(UniformBufferObject), descriptorSetLayout, uniformBuffers, textureImageView, textureSampler, descriptorSets);
+        createDescriptorPool( device, swapChainImages, descriptorPool);
+        createDescriptorSets(device, swapChainImages, descriptorPool, sizeof(UniformBufferObject), descriptorSetLayout, uniformBuffers, textureImageView, textureSampler, descriptorSets);
         createCommandBuffers();
         createSyncObjects();
     }
@@ -349,8 +345,8 @@ private:
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         vulkan_util::createUniformBuffers(physicalDevice, device, swapChainImages, uniformBuffers, sizeof(UniformBufferObject), uniformBuffersMemory);
-        vulkan_util::createDescriptorPool( device, swapChainImages, descriptorPool);
-        vulkan_util::createDescriptorSets(device, swapChainImages, descriptorPool, sizeof(UniformBufferObject), descriptorSetLayout, uniformBuffers, textureImageView, textureSampler, descriptorSets);
+        createDescriptorPool( device, swapChainImages, descriptorPool);
+        createDescriptorSets(device, swapChainImages, descriptorPool, sizeof(UniformBufferObject), descriptorSetLayout, uniformBuffers, textureImageView, textureSampler, descriptorSets);
         createCommandBuffers();
     }
     
@@ -606,7 +602,7 @@ private:
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
         ubo.viewPos = camera.Position;
-        ubo.direction = glm::vec3(1.0f, 1.0f, 1.0f);
+        // ubo.direction = glm::vec3(1.0f, 1.0f, 1.0f);
         // ubo.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
         // ubo.diffuse = glm::vec3(0.4f, 0.4f, 0.4f);
         // ubo.specular = glm::vec3(0.5f, 0.5f, 0.5f);
@@ -676,6 +672,98 @@ private:
         }
         
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+        void createTextureSampler(VkDevice device, VkSampler& textureSampler) {
+        VkSamplerCreateInfo samplerInfo = {};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxAnisotropy = 16;
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        
+        if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create texture sampler!");
+        }
+    }
+    void createDescriptorPool(VkDevice device, std::vector<VkImage>& swapChainImages, VkDescriptorPool& descriptorPool) {
+        std::array<VkDescriptorPoolSize, 2> poolSizes = {};
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+        poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+        
+        VkDescriptorPoolCreateInfo poolInfo = {};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        poolInfo.pPoolSizes = poolSizes.data();
+        poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+        
+        if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor pool!");
+        }
+    }
+
+    void createDescriptorSets(VkDevice device, std::vector<VkImage>& swapChainImages, VkDescriptorPool descriptorPool, VkDeviceSize size, const VkDescriptorSetLayout& descriptorSetLayout, std::vector<VkBuffer>& uniformBuffers, VkImageView textureImageView, VkSampler textureSampler, std::vector<VkDescriptorSet>& descriptorSets) {
+        std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+        allocInfo.pSetLayouts = layouts.data();
+        
+        descriptorSets.resize(swapChainImages.size());
+        if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+        
+        for (size_t i = 0; i < swapChainImages.size(); i++) {
+            VkDescriptorBufferInfo bufferInfo = {};
+            bufferInfo.buffer = uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = size;
+            
+            VkDescriptorImageInfo imageInfo = {};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = textureImageView;
+            imageInfo.sampler = textureSampler;
+            
+            std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
+            
+            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[0].dstSet = descriptorSets[i];
+            descriptorWrites[0].dstBinding = 0;
+            descriptorWrites[0].dstArrayElement = 0;
+            descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrites[0].descriptorCount = 1;
+            descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+//            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+//            descriptorWrites[1].dstSet = descriptorSets[i];
+//            descriptorWrites[1].dstBinding = 1;
+//            descriptorWrites[1].dstArrayElement = 0;
+//            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+//            descriptorWrites[1].descriptorCount = 1;
+//            descriptorWrites[1].pBufferInfo = &bufferInfo;
+            
+            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[1].dstSet = descriptorSets[i];
+            descriptorWrites[1].dstBinding = 1;
+            descriptorWrites[1].dstArrayElement = 0;
+            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrites[1].descriptorCount = 1;
+            descriptorWrites[1].pImageInfo = &imageInfo;
+            
+            vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        }
     }
 };
 
