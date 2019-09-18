@@ -26,16 +26,7 @@
 #include <set>
 #include <unordered_map>
 
-#define VK_CHECK_RESULT(f)		{assert(f == VK_SUCCESS);}														\
-// {																										\
-// 	VkResult res = (f);																					\
-// 	if (res != VK_SUCCESS)																				\
-// 	{																									\
-// 		/*std::cout << "Fatal : VkResult is \"" << vks::tools::errorString(res) << "\" in " << __FILE__ << " at line " << __LINE__ << std::endl; \
-//         std::cout << "Fatal : VkResult is \"" << res << "\" in " << __FILE__ << " at line " << __LINE__ << std::endl; \ */
-// 		assert(res == VK_SUCCESS);           															\
-// 	}																									\
-// }
+#define VK_CHECK_RESULT(f)		{assert(f == VK_SUCCESS);}
 
 namespace vulkan_init {
 
@@ -1581,8 +1572,6 @@ namespace vulkan_util {
         
         vulkan_util::endSingleTimeCommands(device, commandPool, graphicsQueue, commandBuffer);
     }
-
-    
     void createFramebuffers(VkDevice device, std::vector<VkImageView>& swapChainImageViews, VkImageView depthImageView, VkRenderPass renderPass, VkExtent2D swapChainExtent, std::vector<VkFramebuffer>& swapChainFramebuffers) {
         swapChainFramebuffers.resize(swapChainImageViews.size());
         
@@ -1669,17 +1658,6 @@ namespace vulkan_util {
 
         // Attach the memory to the buffer object
         buffer->bind();
-    }
-
-    void createUniformBuffers(VkPhysicalDevice physicalDevice, VkDevice device, std::vector<VkImage>& swapChainImages, std::vector<VkBuffer>& uniformBuffers, VkDeviceSize bufferSize, std::vector<VkDeviceMemory>& uniformBuffersMemory) {
-        // VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-        
-        uniformBuffers.resize(swapChainImages.size());
-        uniformBuffersMemory.resize(swapChainImages.size());
-        
-        for (size_t i = 0; i < swapChainImages.size(); i++) {
-            createBuffer(physicalDevice, device, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
-        }
     }
     void createTextureImage(VkPhysicalDevice physicalDevice, VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, std::string path, VkImage& textureImage, VkDeviceMemory& textureImageMemory) {
         int texWidth, texHeight, texChannels;
