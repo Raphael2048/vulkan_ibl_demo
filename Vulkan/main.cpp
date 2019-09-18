@@ -150,9 +150,8 @@ private:
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
     
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
-    
+
+    vulkan_util::Buffer uniformBufferObject;
     VkDescriptorPool descriptorPool;
     VkDescriptorSet descriptorSet;
     
@@ -239,7 +238,7 @@ private:
         sphereData();
         createVertexBuffer();
         createIndexBuffer();
-        vulkan_util::createUniformBuffers(physicalDevice, device, swapChainImages, uniformBuffers, sizeof(UniformBufferObject), uniformBuffersMemory);
+        prepareUnifromBuffers();
         createDescriptorPool();
         createDescriptorSets();
         createCommandBuffers();
@@ -280,10 +279,7 @@ private:
         
         vkDestroySwapchainKHR(device, swapChain, nullptr);
         
-        for (size_t i = 0; i < swapChainImages.size(); i++) {
-            vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-            vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
-        }
+        uniformBufferObject.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     }
@@ -344,7 +340,7 @@ private:
         vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/vert.spv", "shaders/frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
-        vulkan_util::createUniformBuffers(physicalDevice, device, swapChainImages, uniformBuffers, sizeof(UniformBufferObject), uniformBuffersMemory);
+        prepareUnifromBuffers();
         createDescriptorPool();
         createDescriptorSets();
         createCommandBuffers();
@@ -501,6 +497,10 @@ private:
         vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
     
+    void prepareUnifromBuffers() {
+        vulkan_util::prepareUniformBuffer(physicalDevice, device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &uniformBufferObject, sizeof(UniformBufferObject));
+        uniformBufferObject.map();
+    }
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
         VkCommandBuffer commandBuffer = vulkan_util::beginSingleTimeCommands(device, commandPool);
         
@@ -606,11 +606,7 @@ private:
         // ubo.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
         // ubo.diffuse = glm::vec3(0.4f, 0.4f, 0.4f);
         // ubo.specular = glm::vec3(0.5f, 0.5f, 0.5f);
-        
-        void* data;
-        vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
-        memcpy(data, &ubo, sizeof(ubo));
-        vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
+        memcpy(uniformBufferObject.mapped, &ubo, sizeof(ubo));
     }
     
     void drawFrame() {
@@ -736,7 +732,7 @@ private:
             throw std::runtime_error("failed to allocate descriptor sets!");
         }
         VkDescriptorBufferInfo bufferInfo = {};
-        bufferInfo.buffer = uniformBuffers[0];
+        bufferInfo.buffer = uniformBufferObject.buffer;
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
         
