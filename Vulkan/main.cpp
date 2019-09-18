@@ -114,6 +114,7 @@ private:
     
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device;
+    vks::VulkanDevice* vulkanDevice;
     
     VkQueue graphicsQueue;
     VkQueue presentQueue;
@@ -151,6 +152,9 @@ private:
 
     vks::Buffer uniformBufferObject;
     vks::Buffer light;
+
+    // vks::Texture2D albedo;
+
     VkDescriptorPool descriptorPool;
     VkDescriptorSet descriptorSet;
     
@@ -221,6 +225,7 @@ private:
         vulkan_util::setupDebugMessenger(instance, debugMessenger);
         vulkan_util::createSurface(instance, window, surface);
         vulkan_util::pickPhysicalDevice(instance, physicalDevice, surface);
+        vulkanDevice = new vks::VulkanDevice(physicalDevice);
         vulkan_util::createLogicalDevice(physicalDevice, surface, device, graphicsQueue, presentQueue);
         vulkan_util::createSwapChain(physicalDevice, surface, window, device, swapChain, swapChainImages, swapChainImageFormat, swapChainExtent);
         vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
@@ -230,6 +235,7 @@ private:
         vulkan_util::createCommandPool(physicalDevice, device, surface, commandPool);
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
+        loadAssets();
         vulkan_util::createTextureImage( physicalDevice,  device,  commandPool,  graphicsQueue, TEXTURE_PATH, textureImage, textureImageMemory);
         vulkan_util::createTextureImageView(device, textureImage, textureImageView);
         createTextureSampler(device, textureSampler);
@@ -280,6 +286,7 @@ private:
         
         uniformBufferObject.destroy();
         light.destroy();
+//        albedo.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     }
@@ -455,6 +462,10 @@ private:
                 indices.push_back(uniqueVertices[vertex]);
             }
         }
+    }
+
+    void loadAssets() {
+        // albedo.loadFromFile("textures/albedo.png", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
     }
     
     void createVertexBuffer() {

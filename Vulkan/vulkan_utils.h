@@ -15,6 +15,8 @@
 #include "stb_image.h"
 #include "VulkanInitializers.hpp"
 #include "VulkanBuffer.hpp"
+#include "VulkanDevice.hpp"
+#include "VulkanTexture.hpp"
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -27,8 +29,6 @@
 #include <array>
 #include <set>
 #include <unordered_map>
-
-#define VK_CHECK_RESULT(f)		{assert(f == VK_SUCCESS);}
 
 namespace vulkan_util {
     const bool enableValidationLayers = true;
