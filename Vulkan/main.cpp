@@ -85,11 +85,9 @@ struct UniformBufferObject {
     alignas(16) glm::vec3 viewPos;
 };
 
-struct DirectLight {
-    alignas(16) glm::vec3 direction;
-    alignas(16) glm::vec3 ambient;
-    alignas(16) glm::vec3 diffuse;
-    alignas(16) glm::vec3 specular;
+struct Light {
+    alignas(16) glm::vec3 position;
+    alignas(16) glm::vec3 color;
 };
 
 class HelloTriangleApplication {
@@ -152,6 +150,7 @@ private:
     
 
     vulkan_util::Buffer uniformBufferObject;
+    vulkan_util::Buffer light;
     VkDescriptorPool descriptorPool;
     VkDescriptorSet descriptorSet;
     
@@ -280,6 +279,7 @@ private:
         vkDestroySwapchainKHR(device, swapChain, nullptr);
         
         uniformBufferObject.destroy();
+        light.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     }
@@ -499,7 +499,9 @@ private:
     
     void prepareUnifromBuffers() {
         vulkan_util::prepareUniformBuffer(physicalDevice, device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &uniformBufferObject, sizeof(UniformBufferObject));
+        vulkan_util::prepareUniformBuffer(physicalDevice, device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &light, sizeof(Light));
         uniformBufferObject.map();
+        light.map();
     }
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
         VkCommandBuffer commandBuffer = vulkan_util::beginSingleTimeCommands(device, commandPool);
@@ -597,16 +599,18 @@ private:
         
         UniformBufferObject ubo = {};
         ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        //ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.view = camera.GetViewMatrix();
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
         ubo.viewPos = camera.Position;
-        // ubo.direction = glm::vec3(1.0f, 1.0f, 1.0f);
-        // ubo.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-        // ubo.diffuse = glm::vec3(0.4f, 0.4f, 0.4f);
-        // ubo.specular = glm::vec3(0.5f, 0.5f, 0.5f);
         memcpy(uniformBufferObject.mapped, &ubo, sizeof(ubo));
+
+        Light l = {
+            glm::vec3(10.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, 0.0f, 1.0f),
+        };
+
+        memcpy(light.mapped, &l, sizeof(l));
     }
     
     void drawFrame() {
@@ -694,6 +698,7 @@ private:
     void createDescriptorSetLayout() {
         std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
             vulkan_init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0),
+            vulkan_init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1),
             vulkan_init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 2),
         };
         VkDescriptorSetLayoutCreateInfo descriptorLayout = 	vulkan_init::descriptorSetLayoutCreateInfo(setLayoutBindings);        
@@ -733,6 +738,7 @@ private:
         
         std::vector<VkWriteDescriptorSet> descriptorWrites = {
             vulkan_init::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &uniformBufferObject.descriptor),
+            vulkan_init::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &light.descriptor),
             vulkan_init::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &imageInfo),
         };
 
