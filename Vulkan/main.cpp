@@ -24,9 +24,9 @@
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
-const std::string MODEL_PATH = "models/chalet.obj";
+// const std::string MODEL_PATH = "models/chalet.obj";
 // const std::string TEXTURE_PATH = "textures/chalet.jpg";
-const std::string TEXTURE_PATH = "textures/albedo.png";
+// const std::string TEXTURE_PATH = "textures/albedo.png";
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 #ifdef NDEBUG
@@ -144,6 +144,16 @@ private:
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
     
+    std::vector<VkShaderModule> shaderModules;
+    VkPipelineCache pipelineCache;
+
+    vks::VertexLayout vertexLayout = vks::VertexLayout({
+		vks::VERTEX_COMPONENT_POSITION,
+		vks::VERTEX_COMPONENT_NORMAL,
+		vks::VERTEX_COMPONENT_UV,
+	});
+
+    vks::Model model;
 
     vks::Buffer uniformBufferObject;
     vks::Buffer light;
@@ -225,7 +235,9 @@ private:
         vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
         vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
         createDescriptorSetLayout();
-        vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/pbr_vert.spv", "shaders/pbr_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
+        //vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/pbr_vert.spv", "shaders/pbr_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
+        createPipelineCache();
+        preparePipeline();
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         loadAssets();
@@ -291,6 +303,7 @@ private:
         uniformBufferObject.destroy();
         light.destroy();
         albedo.destroy();
+        model.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     }
@@ -314,6 +327,11 @@ private:
         
         vkDestroyCommandPool(device, commandPool, nullptr);
         
+        for (auto& shaderModule : shaderModules)
+        {
+            vkDestroyShaderModule(device, shaderModule, nullptr);
+        }
+        vkDestroyPipelineCache(device, pipelineCache, nullptr);
         vkDestroyDevice(device, nullptr);
         
         if (enableValidationLayers) {
@@ -422,47 +440,9 @@ private:
             7, 4, 5, // back
         };
     }
-    
-    void loadModel() {
-        tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t> shapes;
-        std::vector<tinyobj::material_t> materials;
-        std::string warn, err;
-        
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
-            throw std::runtime_error(warn + err);
-        }
-        
-        std::unordered_map<Vertex, uint32_t> uniqueVertices = {};
-        
-        for (const auto& shape : shapes) {
-            for (const auto& index : shape.mesh.indices) {
-                Vertex vertex = {};
-                
-                vertex.pos = {
-                    attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]
-                };
-                
-                vertex.texCoord = {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-                };
-                
-                //vertex.color = {1.0f, 1.0f, 1.0f};
-                
-                if (uniqueVertices.count(vertex) == 0) {
-                    uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
-                    vertices.push_back(vertex);
-                }
-                
-                indices.push_back(uniqueVertices[vertex]);
-            }
-        }
-    }
 
     void loadAssets() {
+        model.loadFromFile("models/cerberus.fbx",  vertexLayout, 0.05f, vulkanDevice, graphicsQueue);
         albedo.loadFromFile("textures/albedo.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
     }
     
@@ -506,12 +486,105 @@ private:
         vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
     
+    void createPipelineCache()
+    {
+        VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
+        pipelineCacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        VK_CHECK_RESULT(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
+    }
+    VkPipelineShaderStageCreateInfo loadShader(std::string fileName, VkShaderStageFlagBits stage)
+    {
+        VkPipelineShaderStageCreateInfo shaderStage = {};
+        shaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStage.stage = stage;
+        shaderStage.module = vks::tools::loadShader(fileName.c_str(), device);
+        shaderStage.pName = "main"; // todo : make param
+        assert(shaderStage.module != VK_NULL_HANDLE);
+        shaderModules.push_back(shaderStage.module);
+        return shaderStage;
+    }
+    void preparePipeline() {
+        VkPipelineInputAssemblyStateCreateInfo inputAssemblyState =
+			vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
+
+		VkPipelineRasterizationStateCreateInfo rasterizationState =
+			vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+
+		VkPipelineColorBlendAttachmentState blendAttachmentState =
+			vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
+
+		VkPipelineColorBlendStateCreateInfo colorBlendState =
+			vks::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+
+		VkPipelineDepthStencilStateCreateInfo depthStencilState =
+			vks::initializers::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+		VkPipelineViewportStateCreateInfo viewportState =
+			vks::initializers::pipelineViewportStateCreateInfo(1, 1);
+
+		VkPipelineMultisampleStateCreateInfo multisampleState =
+			vks::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT);
+
+		std::vector<VkDynamicState> dynamicStateEnables = {
+			VK_DYNAMIC_STATE_VIEWPORT,
+			VK_DYNAMIC_STATE_SCISSOR
+		};
+		VkPipelineDynamicStateCreateInfo dynamicState =
+			vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+
+		// Pipeline layout
+		VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayout, 1);
+		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
+
+		// Pipelines
+		VkGraphicsPipelineCreateInfo pipelineCreateInfo = vks::initializers::pipelineCreateInfo(pipelineLayout, renderPass);
+
+		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+
+		pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
+		pipelineCreateInfo.pRasterizationState = &rasterizationState;
+		pipelineCreateInfo.pColorBlendState = &colorBlendState;
+		pipelineCreateInfo.pMultisampleState = &multisampleState;
+		pipelineCreateInfo.pViewportState = &viewportState;
+		pipelineCreateInfo.pDepthStencilState = &depthStencilState;
+		pipelineCreateInfo.pDynamicState = &dynamicState;
+		pipelineCreateInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+		pipelineCreateInfo.pStages = shaderStages.data();
+
+		// Vertex bindings an attributes
+		// Binding description
+		std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
+			vks::initializers::vertexInputBindingDescription(0, vertexLayout.stride(), VK_VERTEX_INPUT_RATE_VERTEX),
+		};
+
+		// Attribute descriptions
+		std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
+			vks::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0),					// Position
+			vks::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 3),	// Normal
+			vks::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 6),		// UV
+		};
+
+		VkPipelineVertexInputStateCreateInfo vertexInputState = vks::initializers::pipelineVertexInputStateCreateInfo();
+		vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
+		vertexInputState.pVertexBindingDescriptions = vertexInputBindings.data();
+		vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
+		vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
+
+		pipelineCreateInfo.pVertexInputState = &vertexInputState;
+
+		// Skybox pipeline (background cube)
+		shaderStages[0] = loadShader("shaders/pbr_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+		shaderStages[1] = loadShader("shaders/pbr_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &graphicsPipeline));
+    }
+
     void prepareUnifromBuffers() {
         vulkan_util::prepareUniformBuffer(physicalDevice, device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &uniformBufferObject, sizeof(UniformBufferObject));
         vulkan_util::prepareUniformBuffer(physicalDevice, device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &light, sizeof(Light));
         uniformBufferObject.map();
         light.map();
     }
+
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
         VkCommandBuffer commandBuffer = vulkan_util::beginSingleTimeCommands(device, commandPool);
         
@@ -559,17 +632,24 @@ private:
             
             vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
             
+
+            VkViewport viewport = vks::initializers::viewport(swapChainExtent.width, swapChainExtent.height, 0.0f, 1.0f);
+			vkCmdSetViewport(commandBuffers[i], 0, 1, &viewport);
+
+			VkRect2D scissor = vks::initializers::rect2D(swapChainExtent.width, swapChainExtent.height,	0, 0);
+			vkCmdSetScissor(commandBuffers[i], 0, 1, &scissor);
+
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
             
             VkBuffer vertexBuffers[] = {vertexBuffer};
             VkDeviceSize offsets[] = {0};
-            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &model.vertices.buffer, offsets);
             
-            vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindIndexBuffer(commandBuffers[i], model.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
             
             vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
             
-            vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+            vkCmdDrawIndexed(commandBuffers[i], model.indexCount, 1, 0, 0, 0);
             
             vkCmdEndRenderPass(commandBuffers[i]);
             
@@ -681,27 +761,6 @@ private:
         }
         
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-    }
-
-    void createTextureSampler(VkDevice device, VkSampler& textureSampler) {
-        VkSamplerCreateInfo samplerInfo = {};
-        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = VK_FILTER_LINEAR;
-        samplerInfo.minFilter = VK_FILTER_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.anisotropyEnable = VK_TRUE;
-        samplerInfo.maxAnisotropy = 16;
-        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        samplerInfo.unnormalizedCoordinates = VK_FALSE;
-        samplerInfo.compareEnable = VK_FALSE;
-        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        
-        if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create texture sampler!");
-        }
     }
 
     void createDescriptorSetLayout() {
