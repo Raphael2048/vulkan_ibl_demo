@@ -136,12 +136,7 @@ private:
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
-    
-    VkImage textureImage;
-    VkDeviceMemory textureImageMemory;
-    VkImageView textureImageView;
-    VkSampler textureSampler;
-    
+     
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     VkBuffer vertexBuffer;
@@ -153,7 +148,7 @@ private:
     vks::Buffer uniformBufferObject;
     vks::Buffer light;
 
-    // vks::Texture2D albedo;
+    vks::Texture2D albedo;
 
     VkDescriptorPool descriptorPool;
     VkDescriptorSet descriptorSet;
@@ -225,21 +220,16 @@ private:
         vulkan_util::setupDebugMessenger(instance, debugMessenger);
         vulkan_util::createSurface(instance, window, surface);
         vulkan_util::pickPhysicalDevice(instance, physicalDevice, surface);
-        vulkanDevice = new vks::VulkanDevice(physicalDevice);
-        vulkan_util::createLogicalDevice(physicalDevice, surface, device, graphicsQueue, presentQueue);
+        prepareLogicalDevice();
         vulkan_util::createSwapChain(physicalDevice, surface, window, device, swapChain, swapChainImages, swapChainImageFormat, swapChainExtent);
         vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
         vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
         createDescriptorSetLayout();
         vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/pbr_vert.spv", "shaders/pbr_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
-        vulkan_util::createCommandPool(physicalDevice, device, surface, commandPool);
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         loadAssets();
-        vulkan_util::createTextureImage( physicalDevice,  device,  commandPool,  graphicsQueue, TEXTURE_PATH, textureImage, textureImageMemory);
-        vulkan_util::createTextureImageView(device, textureImage, textureImageView);
-        createTextureSampler(device, textureSampler);
-        //loadModel();
+        // loadModel();
         sphereData();
         createVertexBuffer();
         createIndexBuffer();
@@ -261,6 +251,20 @@ private:
         }
         
         vkDeviceWaitIdle(device);
+    }
+
+    void prepareLogicalDevice() {
+        vulkanDevice = new vks::VulkanDevice(physicalDevice);
+        VkPhysicalDeviceFeatures deviceFeatures = {};
+        deviceFeatures.samplerAnisotropy = VK_TRUE;
+        std::vector<const char*> enabledDeviceExtensions;
+        VkResult res = vulkanDevice->createLogicalDevice(deviceFeatures, enabledDeviceExtensions, nullptr);
+        if (res != VK_SUCCESS) {
+            vks::tools::exitFatal("Could not create Vulkan device: \n" + vks::tools::errorString(res), res);
+        }
+        device = vulkanDevice->logicalDevice;
+        vkGetDeviceQueue(device, vulkanDevice->queueFamilyIndices.graphics, 0, &graphicsQueue);
+        commandPool = vulkanDevice->commandPool;
     }
     
     void cleanupSwapChain() {
@@ -286,20 +290,14 @@ private:
         
         uniformBufferObject.destroy();
         light.destroy();
-//        albedo.destroy();
+        albedo.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     }
     
     void cleanup() {
         cleanupSwapChain();
-        
-        vkDestroySampler(device, textureSampler, nullptr);
-        vkDestroyImageView(device, textureImageView, nullptr);
-        
-        vkDestroyImage(device, textureImage, nullptr);
-        vkFreeMemory(device, textureImageMemory, nullptr);
-        
+                
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         
         vkDestroyBuffer(device, indexBuffer, nullptr);
@@ -465,7 +463,7 @@ private:
     }
 
     void loadAssets() {
-        // albedo.loadFromFile("textures/albedo.png", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
+        albedo.loadFromFile("textures/albedo.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
     }
     
     void createVertexBuffer() {
@@ -673,7 +671,7 @@ private:
         
         presentInfo.pImageIndices = &imageIndex;
         
-        result = vkQueuePresentKHR(presentQueue, &presentInfo);
+        result = vkQueuePresentKHR(graphicsQueue, &presentInfo);
         
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
             framebufferResized = false;
@@ -740,17 +738,11 @@ private:
         //descriptorSets.resize(swapChainImages.size());
         if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate descriptor sets!");
-        }
-        
-        VkDescriptorImageInfo imageInfo = {};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = textureImageView;
-        imageInfo.sampler = textureSampler;
-        
+        }        
         std::vector<VkWriteDescriptorSet> descriptorWrites = {
             vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &uniformBufferObject.descriptor),
             vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &light.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &imageInfo),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &albedo.descriptor),
         };
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);

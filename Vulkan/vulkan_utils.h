@@ -325,13 +325,6 @@ namespace vulkan_util {
         createInfo.enabledExtensionCount = static_cast<uint32_t>(vulkan_util::deviceExtensions.size());
         createInfo.ppEnabledExtensionNames = vulkan_util::deviceExtensions.data();
         
-        if (enableValidationLayers) {
-            createInfo.enabledLayerCount = static_cast<uint32_t>(vulkan_util::validationLayers.size());
-            createInfo.ppEnabledLayerNames = vulkan_util::validationLayers.data();
-        } else {
-            createInfo.enabledLayerCount = 0;
-        }
-        
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
             throw std::runtime_error("failed to create logical device!");
         }
@@ -719,18 +712,6 @@ namespace vulkan_util {
         
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
-    }
-
-    void createCommandPool(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkCommandPool& commandPool) {
-        QueueFamilyIndices queueFamilyIndices = vulkan_util::findQueueFamilies(physicalDevice, surface);
-        
-        VkCommandPoolCreateInfo poolInfo = {};
-        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-        
-        if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create graphics command pool!");
-        }
     }
 
     VkCommandBuffer beginSingleTimeCommands(VkDevice device, VkCommandPool commandPool) {
