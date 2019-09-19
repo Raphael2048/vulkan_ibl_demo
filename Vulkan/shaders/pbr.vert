@@ -1,12 +1,12 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-layout(binding = 0) uniform UniformBufferObject {
+layout(binding = 0) uniform Matrices {
     mat4 model;
     mat4 view;
     mat4 proj;
     vec3 viewPos;
-} ubo;
+} matrices;
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -17,9 +17,9 @@ layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragTexCoord;
 
 void main() {
-    fragPos = vec3(ubo.model * vec4(inPosition, 1.0));
+    fragPos = vec3(matrices.model * vec4(inPosition, 1.0));
     // fragNormal = mat3(transpose(inverse(model))) * inNormal;
-    fragNormal = mat3(ubo.model) * inNormal;
+    fragNormal = mat3(matrices.model) * inNormal;
     fragTexCoord = inTexCoord;
-    gl_Position = ubo.proj * ubo.view * vec4(fragPos, 1.0);
+    gl_Position = matrices.proj * matrices.view * vec4(fragPos, 1.0);
 }

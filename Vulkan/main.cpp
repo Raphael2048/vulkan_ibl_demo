@@ -78,18 +78,6 @@ namespace std {
     };
 }
 
-struct UniformBufferObject {
-    alignas(16) glm::mat4 model;
-    alignas(16) glm::mat4 view;
-    alignas(16) glm::mat4 proj;
-    alignas(16) glm::vec3 viewPos;
-};
-
-struct Light {
-    alignas(16) glm::vec3 position;
-    alignas(16) glm::vec3 color;
-};
-
 class HelloTriangleApplication {
 public:
     Camera camera = Camera(glm::vec3(0.0f, 0.0f, 3.0f));
@@ -133,17 +121,26 @@ private:
     
     VkCommandPool commandPool;
     
-    VkImage depthImage;
-    VkDeviceMemory depthImageMemory;
-    VkImageView depthImageView;
-     
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
+    struct {
+        VkImage depthImage;
+        VkDeviceMemory depthImageMemory;
+        VkImageView depthImageView;
+    } depthStencil; 
+
+
+    struct UBOMatrices {
+        alignas(16) glm::mat4 model;
+        alignas(16) glm::mat4 view;
+        alignas(16) glm::mat4 proj;
+        alignas(16) glm::vec3 viewPos;
+    } uboMatrices;
     
+    struct UBOParams {
+		glm::vec4 lights[4];
+		float exposure = 4.5f;
+		float gamma = 2.2f;
+	} uboParams;
+
     std::vector<VkShaderModule> shaderModules;
     VkPipelineCache pipelineCache;
 
@@ -155,10 +152,16 @@ private:
 
     vks::Model model;
 
-    vks::Buffer uniformBufferObject;
-    vks::Buffer light;
+    struct {
+		vks::Buffer matrices;
+		// vks::Buffer skybox;
+		vks::Buffer params;
+	} uniformBuffers;
 
-    vks::Texture2D albedo;
+    struct {
+        vks::Texture2D albedo;
+        vks::Texture2D normal;
+    } textures;
 
     VkDescriptorPool descriptorPool;
     VkDescriptorSet descriptorSet;
@@ -170,16 +173,17 @@ private:
     std::vector<VkFence> inFlightFences;
     size_t currentFrame = 0;
     
-    bool framebufferResized = false;
+    // bool framebufferResized = false;
     
     void initWindow() {
         glfwInit();
         
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        // glfwWindowHint(GLFW_WINDOW_NO_RESIZE, GL_TRUE);
         
         window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
         glfwSetWindowUserPointer(window, this);
-        glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+        // glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
         glfwSetCursorPosCallback(window, mouse_callback);
         glfwSetScrollCallback(window, scroll_callback);
         //glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -204,10 +208,10 @@ private:
 
         app->camera.ProcessMouseMovement(xoffset, yoffset);
     }
-    static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
-        app->framebufferResized = true;
-    }
+    // static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    //     auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    //     app->framebufferResized = true;
+    // }
 
     void processInput(GLFWwindow *window)
     {
@@ -236,15 +240,11 @@ private:
         vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
         createDescriptorSetLayout();
         //vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/pbr_vert.spv", "shaders/pbr_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
+        vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthStencil.depthImageView, depthStencil.depthImage, depthStencil.depthImageMemory );
+        vulkan_util::createFramebuffers(device, swapChainImageViews, depthStencil.depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         createPipelineCache();
         preparePipeline();
-        vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
-        vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         loadAssets();
-        // loadModel();
-        sphereData();
-        createVertexBuffer();
-        createIndexBuffer();
         prepareUnifromBuffers();
         createDescriptorPool();
         createDescriptorSets();
@@ -280,9 +280,9 @@ private:
     }
     
     void cleanupSwapChain() {
-        vkDestroyImageView(device, depthImageView, nullptr);
-        vkDestroyImage(device, depthImage, nullptr);
-        vkFreeMemory(device, depthImageMemory, nullptr);
+        vkDestroyImageView(device, depthStencil.depthImageView, nullptr);
+        vkDestroyImage(device, depthStencil.depthImage, nullptr);
+        vkFreeMemory(device, depthStencil.depthImageMemory, nullptr);
         
         for (auto framebuffer : swapChainFramebuffers) {
             vkDestroyFramebuffer(device, framebuffer, nullptr);
@@ -300,9 +300,10 @@ private:
         
         vkDestroySwapchainKHR(device, swapChain, nullptr);
         
-        uniformBufferObject.destroy();
-        light.destroy();
-        albedo.destroy();
+        uniformBuffers.matrices.destroy();
+        uniformBuffers.params.destroy();
+        textures.albedo.destroy();
+        textures.normal.destroy();
         model.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -312,12 +313,6 @@ private:
         cleanupSwapChain();
                 
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-        
-        vkDestroyBuffer(device, indexBuffer, nullptr);
-        vkFreeMemory(device, indexBufferMemory, nullptr);
-        
-        vkDestroyBuffer(device, vertexBuffer, nullptr);
-        vkFreeMemory(device, vertexBufferMemory, nullptr);
         
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
@@ -345,147 +340,13 @@ private:
         
         glfwTerminate();
     }
-    
-    void recreateSwapChain() {
-        int width = 0, height = 0;
-        while (width == 0 || height == 0) {
-            glfwGetFramebufferSize(window, &width, &height);
-            glfwWaitEvents();
-        }
-        
-        vkDeviceWaitIdle(device);
-        
-        cleanupSwapChain();
-        
-        vulkan_util::createSwapChain(physicalDevice, surface, window, device, swapChain, swapChainImages, swapChainImageFormat, swapChainExtent);
-        vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
-        vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
-        vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/vert.spv", "shaders/frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
-        vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthImageView, depthImage, depthImageMemory );
-        vulkan_util::createFramebuffers(device, swapChainImageViews, depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
-        prepareUnifromBuffers();
-        createDescriptorPool();
-        createDescriptorSets();
-        createCommandBuffers();
-    }
-    
-    void sphereData() {
-        const unsigned int X_SEGMENTS = 64;
-        const unsigned int Y_SEGMENTS = 64;
-        const float PI = 3.14159265359;
-        vertices.clear();
-        indices.clear();
-        for (unsigned int y = 0; y <= Y_SEGMENTS; ++y)
-        {
-            for (unsigned int x = 0; x <= X_SEGMENTS; ++x)
-            {
-                float xSegment = (float)x / (float)X_SEGMENTS;
-                float ySegment = (float)y / (float)Y_SEGMENTS;
-                float xPos = std::cos(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
-                float yPos = std::cos(ySegment * PI);
-                float zPos = std::sin(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
-                Vertex v;
-                v.pos = (glm::vec3(xPos, yPos, zPos));
-                v.normal = (glm::vec3(xPos, yPos, zPos));
-                v.texCoord = glm::vec2(xSegment, ySegment);
-                vertices.push_back(v);
-            }
-        }
-        bool oddRow = false;
-        for (int y = 0; y < Y_SEGMENTS; ++y)
-        {
-            if (!oddRow) // even rows: y == 0, y == 2; and so on
-            {
-                for (int x = 0; x <= X_SEGMENTS; ++x)
-                {
-                    indices.push_back(y       * (X_SEGMENTS + 1) + x);
-                    indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
-                }
-            }
-            else
-            {
-                for (int x = X_SEGMENTS; x >= 0; --x)
-                {
-                    indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
-                    indices.push_back(y       * (X_SEGMENTS + 1) + x);
-                }
-            }
-            oddRow = !oddRow;
-        }
-    }
-
-    void cubeData() {
-        vertices = {
-            {{ 0.5f,  0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {1.0f, 1.0f} },
-            {{ 0.5f,  0.5f, -0.5f},   {0.0f, 1.0f, 0.0f},   {1.0f, 0.0f} },
-            {{ 0.5f, -0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {0.0f, 1.0f} },
-            {{ 0.5f, -0.5f, -0.5f},   {1.0f, 0.0f, 0.0f},   {0.0f, 0.0f} },
-            {{-0.5f,  0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {1.0f, 1.0f} },
-            {{-0.5f,  0.5f, -0.5f},   {0.0f, 1.0f, 0.0f},   {0.0f, 1.0f} },
-            {{-0.5f, -0.5f,  0.5f},   {1.0f, 0.0f, 0.0f},   {1.0f, 0.0f} },
-            {{-0.5f, -0.5f, -0.5f},   {1.0f, 0.0f, 0.0f},   {0.0f, 0.0f} },
-        };
-        indices = {
-            0, 3, 1,
-            3, 0, 2, // front
-            4, 1, 5,
-            1, 4, 0,// right
-            4, 2, 0,
-            2, 4, 6,//top
-            2, 7, 3,
-            7, 2, 6,// left
-            7, 1, 5,
-            1, 7, 3, // bottom
-            4, 7, 6,
-            7, 4, 5, // back
-        };
-    }
 
     void loadAssets() {
         model.loadFromFile("models/cerberus.fbx",  vertexLayout, 0.05f, vulkanDevice, graphicsQueue);
-        albedo.loadFromFile("textures/albedo.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
+        textures.albedo.loadFromFile("textures/albedo.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
+        textures.normal.loadFromFile("textures/normal.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
     }
-    
-    void createVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-        
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        vulkan_util::createBuffer(physicalDevice, device, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-        
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices.data(), (size_t) bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-        
-        vulkan_util::createBuffer(physicalDevice, device, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
-        
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-        
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-    
-    void createIndexBuffer() {
-        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-        
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        vulkan_util::createBuffer(physicalDevice, device, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-        
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, indices.data(), (size_t) bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-        
-        vulkan_util::createBuffer(physicalDevice, device, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
-        
-        copyBuffer(stagingBuffer, indexBuffer, bufferSize);
-        
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-    
+  
     void createPipelineCache()
     {
         VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
@@ -517,7 +378,7 @@ private:
 			vks::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
 
 		VkPipelineDepthStencilStateCreateInfo depthStencilState =
-			vks::initializers::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
+			vks::initializers::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
 
 		VkPipelineViewportStateCreateInfo viewportState =
 			vks::initializers::pipelineViewportStateCreateInfo(1, 1);
@@ -579,10 +440,18 @@ private:
     }
 
     void prepareUnifromBuffers() {
-        vulkan_util::prepareUniformBuffer(physicalDevice, device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &uniformBufferObject, sizeof(UniformBufferObject));
-        vulkan_util::prepareUniformBuffer(physicalDevice, device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &light, sizeof(Light));
-        uniformBufferObject.map();
-        light.map();
+        VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&uniformBuffers.matrices,
+			sizeof(uboMatrices)));
+        VK_CHECK_RESULT(uniformBuffers.matrices.map());
+        VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&uniformBuffers.params,
+			sizeof(uboParams)));
+        VK_CHECK_RESULT(uniformBuffers.params.map());
     }
 
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
@@ -641,7 +510,6 @@ private:
 
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
             
-            VkBuffer vertexBuffers[] = {vertexBuffer};
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &model.vertices.buffer, offsets);
             
@@ -686,20 +554,18 @@ private:
         auto currentTime = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
         
-        UniformBufferObject ubo = {};
-        ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = camera.GetViewMatrix();
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
-        ubo.proj[1][1] *= -1;
-        ubo.viewPos = camera.Position;
-        memcpy(uniformBufferObject.mapped, &ubo, sizeof(ubo));
+        uboMatrices.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        uboMatrices.view = camera.GetViewMatrix();
+        uboMatrices.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+        uboMatrices.proj[1][1] *= -1;
+        uboMatrices.viewPos = camera.Position;
+        memcpy(uniformBuffers.matrices.mapped, &uboMatrices, sizeof(uboMatrices));
 
-        Light l = {
-            glm::vec3(10.0f, 0.0f, 0.0f),
-            glm::vec3(0.0f, 0.0f, 1.0f),
-        };
-
-        memcpy(light.mapped, &l, sizeof(l));
+        uboParams.lights[0] = glm::vec4(10.0f, 0, 0, 0);
+        uboParams.lights[1] = glm::vec4(0.0f, 10.0f, 0, 0);
+        uboParams.lights[2] = glm::vec4(0.0f, 10.0f, 10.0f, 0);
+        uboParams.lights[3] = glm::vec4(10.0f, 0, 10.0f, 0);
+        memcpy(uniformBuffers.params.mapped, &uboParams, sizeof(uboParams));
     }
     
     void drawFrame() {
@@ -709,7 +575,6 @@ private:
         VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
         
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            recreateSwapChain();
             return;
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             throw std::runtime_error("failed to acquire swap chain image!");
@@ -753,9 +618,9 @@ private:
         
         result = vkQueuePresentKHR(graphicsQueue, &presentInfo);
         
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
-            framebufferResized = false;
-            recreateSwapChain();
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+            // framebufferResized = false;
+            // recreateSwapChain();
         } else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");
         }
@@ -768,6 +633,7 @@ private:
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0),
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1),
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 2),
+            vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 3),
         };
         VkDescriptorSetLayoutCreateInfo descriptorLayout = 	vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);        
         if (vkCreateDescriptorSetLayout(device, &descriptorLayout, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
@@ -778,7 +644,7 @@ private:
     void createDescriptorPool() {
         std::vector<VkDescriptorPoolSize> poolSizes =  {
             vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4),
-            vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2),
+            vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4),
         };
         VkDescriptorPoolCreateInfo poolInfo = {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -799,9 +665,10 @@ private:
             throw std::runtime_error("failed to allocate descriptor sets!");
         }        
         std::vector<VkWriteDescriptorSet> descriptorWrites = {
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &uniformBufferObject.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &light.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &albedo.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &uniformBuffers.matrices.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &uniformBuffers.params.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.albedo.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &textures.normal.descriptor),
         };
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
