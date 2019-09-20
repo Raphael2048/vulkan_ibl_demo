@@ -21,5 +21,6 @@ void main() {
     // fragNormal = mat3(transpose(inverse(model))) * inNormal;
     fragNormal = mat3(matrices.model) * inNormal;
     fragTexCoord = inTexCoord;
+    fragTexCoord.t = 1.0 - fragTexCoord.t;
     gl_Position = matrices.proj * matrices.view * vec4(fragPos, 1.0);
 }

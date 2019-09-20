@@ -161,6 +161,9 @@ private:
     struct {
         vks::Texture2D albedo;
         vks::Texture2D normal;
+        vks::Texture2D ao;
+        vks::Texture2D metallic;
+        vks::Texture2D roughness;
     } textures;
 
     VkDescriptorPool descriptorPool;
@@ -304,6 +307,9 @@ private:
         uniformBuffers.params.destroy();
         textures.albedo.destroy();
         textures.normal.destroy();
+        textures.ao.destroy();
+        textures.metallic.destroy();
+        textures.roughness.destroy();
         model.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -345,6 +351,9 @@ private:
         model.loadFromFile("models/cerberus.fbx",  vertexLayout, 0.05f, vulkanDevice, graphicsQueue);
         textures.albedo.loadFromFile("textures/albedo.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
         textures.normal.loadFromFile("textures/normal.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
+        textures.ao.loadFromFile("textures/ao.ktx", VK_FORMAT_R8_UNORM, vulkanDevice, graphicsQueue);
+        textures.metallic.loadFromFile("textures/metallic.ktx", VK_FORMAT_R8_UNORM, vulkanDevice, graphicsQueue);
+        textures.roughness.loadFromFile("textures/roughness.ktx", VK_FORMAT_R8_UNORM, vulkanDevice, graphicsQueue);
     }
   
     void createPipelineCache()
@@ -634,6 +643,9 @@ private:
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1),
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 2),
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 3),
+            vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 4),
+            vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 5),
+            vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 6),
         };
         VkDescriptorSetLayoutCreateInfo descriptorLayout = 	vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);        
         if (vkCreateDescriptorSetLayout(device, &descriptorLayout, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
@@ -669,6 +681,9 @@ private:
             vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &uniformBuffers.params.descriptor),
             vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.albedo.descriptor),
             vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &textures.normal.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, &textures.ao.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &textures.metallic.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6, &textures.roughness.descriptor),
         };
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
