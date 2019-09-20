@@ -570,10 +570,11 @@ private:
         uboMatrices.viewPos = camera.Position;
         memcpy(uniformBuffers.matrices.mapped, &uboMatrices, sizeof(uboMatrices));
 
-        uboParams.lights[0] = glm::vec4(10.0f, 0, 0, 0);
-        uboParams.lights[1] = glm::vec4(0.0f, 10.0f, 0, 0);
-        uboParams.lights[2] = glm::vec4(0.0f, 10.0f, 10.0f, 0);
-        uboParams.lights[3] = glm::vec4(10.0f, 0, 10.0f, 0);
+        const float p = 15.0f;
+		uboParams.lights[0] = glm::vec4(-p, -p*0.5f, -p, 1.0f);
+		uboParams.lights[1] = glm::vec4(-p, -p*0.5f,  p, 1.0f);
+		uboParams.lights[2] = glm::vec4( p, -p*0.5f,  p, 1.0f);
+		uboParams.lights[3] = glm::vec4( p, -p*0.5f, -p, 1.0f);
         memcpy(uniformBuffers.params.mapped, &uboParams, sizeof(uboParams));
     }
     

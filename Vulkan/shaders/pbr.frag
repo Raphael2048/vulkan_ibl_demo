@@ -26,7 +26,8 @@ layout(location = 2) in vec2 fragTexCoord;
 
 layout(location = 0) out vec4 outColor;
 
-
+#define PI 3.1415926535897932384626433832795
+#define ALBEDO pow(texture(albedo, fragTexCoord).rgb, vec3(2.2))
 vec3 perturbNormal()
 {
 	vec3 tangentNormal = texture(normal, fragTexCoord).xyz * 2.0 - 1.0;
@@ -43,19 +44,108 @@ vec3 perturbNormal()
 
 	return normalize(TBN * tangentNormal);
 }
+
+vec3 Uncharted2Tonemap(vec3 x)
+{
+	float A = 0.15;
+	float B = 0.50;
+	float C = 0.10;
+	float D = 0.20;
+	float E = 0.02;
+	float F = 0.30;
+	return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F))-E/F;
+}
+
+// Normal Distribution function --------------------------------------
+float D_GGX(float dotNH, float roughness)
+{
+	float alpha = roughness * roughness;
+	float alpha2 = alpha * alpha;
+	float denom = dotNH * dotNH * (alpha2 - 1.0) + 1.0;
+	return (alpha2)/(PI * denom*denom); 
+}
+
+// Geometric Shadowing function --------------------------------------
+float G_SchlicksmithGGX(float dotNL, float dotNV, float roughness)
+{
+	float r = (roughness + 1.0);
+	float k = (r*r) / 8.0;
+	float GL = dotNL / (dotNL * (1.0 - k) + k);
+	float GV = dotNV / (dotNV * (1.0 - k) + k);
+	return GL * GV;
+}
+
+// Fresnel function ----------------------------------------------------
+vec3 F_Schlick(float cosTheta, vec3 F0)
+{
+	return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+vec3 F_SchlickR(float cosTheta, vec3 F0, float roughness)
+{
+	return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// vec3 prefilteredReflection(vec3 R, float roughness)
+// {
+// 	const float MAX_REFLECTION_LOD = 9.0; // todo: param/const
+// 	float lod = roughness * MAX_REFLECTION_LOD;
+// 	float lodf = floor(lod);
+// 	float lodc = ceil(lod);
+// 	vec3 a = textureLod(prefilteredMap, R, lodf).rgb;
+// 	vec3 b = textureLod(prefilteredMap, R, lodc).rgb;
+// 	return mix(a, b, lod - lodf);
+// }
+
+vec3 specularContribution(vec3 L, vec3 V, vec3 N, vec3 F0, float metallic, float roughness)
+{
+	// Precalculate vectors and dot products	
+	vec3 H = normalize (V + L);
+	float dotNH = clamp(dot(N, H), 0.0, 1.0);
+	float dotNV = clamp(dot(N, V), 0.0, 1.0);
+	float dotNL = clamp(dot(N, L), 0.0, 1.0);
+
+	// Light color fixed
+	vec3 lightColor = vec3(1.0);
+
+	vec3 color = vec3(0.0);
+
+	if (dotNL > 0.0) {
+		// D = Normal distribution (Distribution of the microfacets)
+		float D = D_GGX(dotNH, roughness); 
+		// G = Geometric shadowing term (Microfacets shadowing)
+		float G = G_SchlicksmithGGX(dotNL, dotNV, roughness);
+		// F = Fresnel factor (Reflectance depending on angle of incidence)
+		vec3 F = F_Schlick(dotNV, F0);		
+		vec3 spec = D * F * G / (4.0 * dotNL * dotNV + 0.001);		
+		vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);			
+		color += (kD * ALBEDO / PI + spec) * dotNL;
+	}
+
+	return color;
+}
 void main() {
+    
     //outColor = texture(albedo, fragTexCoord);
-    vec4 sampleColor = texture(albedo, fragTexCoord);
-    vec3 tnormal = perturbNormal();
-    float k = 0;
-    for (int i = 0 ; i < 4; i++) {
-        vec3 viewDir = normalize(matrices.viewPos - fragPos);
-        vec3 lightDir = normalize(vec3(params.positions[i]) - fragPos);
-        float diffuse = max(dot(lightDir, tnormal), 0.0);
-        vec3 halfDir = normalize(viewDir + lightDir);
-        float spec = pow(max(dot(halfDir, tnormal), 0.0), 5);
-        k += diffuse * 0.2f + spec * 0.2f;
+    vec3 N = perturbNormal();
+    vec3 V = normalize(matrices.viewPos - fragPos);
+    vec3 sampleColor = pow(texture(albedo, fragTexCoord).rgb, vec3(2.2f));
+    float aoValue = texture(ao, fragTexCoord).r;
+    float metallicValue = texture(metallic, fragTexCoord).r;
+    float roughnessValue = texture(metallic, fragTexCoord).r;
+    vec3 F0 = vec3(0.04f);
+    F0 = mix(F0, sampleColor, roughnessValue);
+    vec3 Lo = vec3(0.0f);
+    for(int i = 0; i < 4; i++) {
+        vec3 L = normalize(params.positions[i].xyz - fragPos);
+        Lo += specularContribution(L, V, N, F0, metallicValue, roughnessValue);
+
     }
-    outColor = pow((k + 0.1f) * sampleColor, vec4(1.0f / params.gamma));
+    vec3 ambient = vec3(0.03) * sampleColor * aoValue;
+    vec3 color   = ambient + Lo;  
+    // vec3 color = sampleColor * (k + aoValue);
+    color = Uncharted2Tonemap(color * params.exposure);
+	color = color * (1.0f / Uncharted2Tonemap(vec3(11.2f)));
+    // color = color / (vec3(1.0) + color);
+    outColor = vec4(pow(color, vec3(1.0f / params.gamma)), 1.0);
     // outColor = texture(texSampler, fragTexCoord) * vec4(light.color, 1.0);
 }
