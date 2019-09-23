@@ -151,8 +151,10 @@ private:
 		vks::VERTEX_COMPONENT_NORMAL,
 		vks::VERTEX_COMPONENT_UV,
 	});
-
-    vks::Model model;
+    struct {
+        vks::Model object;
+        vks::Model cube;
+    } models;
 
     struct {
 		vks::Buffer matrices;
@@ -211,7 +213,7 @@ private:
             app->firstMouse = false;
         }
         float xoffset = xpos - app->lastX;
-        float yoffset = app->lastY - ypos; // reversed since y-coordinates go from bottom to top
+        float yoffset = ypos - app->lastY; // reversed since y-coordinates go from bottom to top
 
         app->lastX = xpos;
         app->lastY = ypos;
@@ -240,6 +242,7 @@ private:
     }
     
     void initVulkan() {
+        // createInstance();
         vulkan_util::createInstance(instance);
         vulkan_util::setupDebugMessenger(instance, debugMessenger);
         vulkan_util::createSurface(instance, window, surface);
@@ -261,6 +264,16 @@ private:
         createSyncObjects();
     }
     
+    // void createInstance()
+    // {
+    //     VkApplicationInfo appInfo = {};
+    //     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    //     appInfo.pApplicationName = "Vulkan PBR";
+    //     appInfo.pEngineName = "Vulkan PBR";
+    //     appInfo.apiVersion = VK_API_VERSION_1_0;
+	//     std::vector<const char*> instanceExtensions = { VK_KHR_SURFACE_EXTENSION_NAME };
+    //     instanceExtensions.push_back("VK_MVK_macos_surface");
+    // }
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
@@ -300,6 +313,7 @@ private:
         vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
         
         vkDestroyPipeline(device, pipelines.pbr, nullptr);
+        vkDestroyPipeline(device, pipelines.skybox, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyRenderPass(device, renderPass, nullptr);
         
@@ -317,7 +331,9 @@ private:
         textures.ao.destroy();
         textures.metallic.destroy();
         textures.roughness.destroy();
-        model.destroy();
+        textures.environmentCube.destroy();
+        models.object.destroy();
+        models.cube.destroy();
         
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     }
@@ -355,7 +371,8 @@ private:
     }
 
     void loadAssets() {
-        model.loadFromFile("models/cerberus.fbx",  vertexLayout, 0.05f, vulkanDevice, graphicsQueue);
+        models.object.loadFromFile("models/cerberus.fbx",  vertexLayout, 0.05f, vulkanDevice, graphicsQueue);
+        models.cube.loadFromFile("models/box.obj", vertexLayout, 0.05f, vulkanDevice, graphicsQueue);
         textures.albedo.loadFromFile("textures/albedo.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
         textures.normal.loadFromFile("textures/normal.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, graphicsQueue);
         textures.ao.loadFromFile("textures/ao.ktx", VK_FORMAT_R8_UNORM, vulkanDevice, graphicsQueue);
@@ -386,7 +403,7 @@ private:
 			vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 
 		VkPipelineRasterizationStateCreateInfo rasterizationState =
-			vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+			vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
 
 		VkPipelineColorBlendAttachmentState blendAttachmentState =
 			vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
@@ -450,10 +467,18 @@ private:
 
 		pipelineCreateInfo.pVertexInputState = &vertexInputState;
 
-		// Skybox pipeline (background cube)
+		// Pbr pipeline
 		shaderStages[0] = loadShader("shaders/pbr_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader("shaders/pbr_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipelines.pbr));
+
+        //Skybox pipeline
+        shaderStages[0] = loadShader("shaders/skybox_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader("shaders/skybox_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        depthStencilState.depthTestEnable = VK_FALSE;
+        depthStencilState.depthWriteEnable = VK_FALSE;
+        rasterizationState.cullMode = VK_CULL_MODE_NONE;
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipelines.skybox));
     }
 
     void prepareUnifromBuffers() {
@@ -531,17 +556,19 @@ private:
 			VkRect2D scissor = vks::initializers::rect2D(swapChainExtent.width, swapChainExtent.height,	0, 0);
 			vkCmdSetScissor(commandBuffers[i], 0, 1, &scissor);
 
-            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.pbr);
-            
             VkDeviceSize offsets[] = {0};
-            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &model.vertices.buffer, offsets);
-            
-            vkCmdBindIndexBuffer(commandBuffers[i], model.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-            
+            // skybox
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets.skybox, 0, NULL);
+            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &models.cube.vertices.buffer, offsets);
+            vkCmdBindIndexBuffer(commandBuffers[i], models.cube.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.skybox);
+            vkCmdDrawIndexed(commandBuffers[i], models.cube.indexCount, 1, 0, 0, 0);
+
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.pbr);  
+            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &models.object.vertices.buffer, offsets);
+            vkCmdBindIndexBuffer(commandBuffers[i], models.object.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets.pbr, 0, nullptr);
-            
-            vkCmdDrawIndexed(commandBuffers[i], model.indexCount, 1, 0, 0, 0);
-            
+            vkCmdDrawIndexed(commandBuffers[i], models.object.indexCount, 1, 0, 0, 0);
             vkCmdEndRenderPass(commandBuffers[i]);
             
             if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
@@ -579,10 +606,13 @@ private:
         
         uboMatrices.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         uboMatrices.view = camera.GetViewMatrix();
-        uboMatrices.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
-        uboMatrices.proj[1][1] *= -1;
+        uboMatrices.proj = glm::perspective(glm::radians(camera.Zoom), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 100.0f);
+        //uboMatrices.proj[1][1] *= -1;
         uboMatrices.viewPos = camera.Position;
         memcpy(uniformBuffers.matrices.mapped, &uboMatrices, sizeof(uboMatrices));
+
+        uboMatrices.model = glm::mat4(glm::mat3(camera.GetViewMatrix()));
+        memcpy(uniformBuffers.skybox.mapped, &uboMatrices, sizeof(uboMatrices));
 
         const float p = 15.0f;
 		uboParams.lights[0] = glm::vec4(-p, -p*0.5f, -p, 1.0f);
@@ -674,11 +704,6 @@ private:
             vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16),
         };
         VkDescriptorPoolCreateInfo poolInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 2);
-        // VkDescriptorPoolCreateInfo poolInfo = {};
-        // poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        // poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-        // poolInfo.pPoolSizes = poolSizes.data();
-        // poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
         
         if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool!");

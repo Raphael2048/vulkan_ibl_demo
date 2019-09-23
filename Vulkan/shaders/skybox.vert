@@ -6,8 +6,9 @@ layout (location = 2) in vec2 inUV;
 
 layout (binding = 0) uniform UBO 
 {
-	mat4 projection;
 	mat4 model;
+    mat4 view;
+	mat4 projection;
 } ubo;
 
 layout (location = 0) out vec3 outUVW;
