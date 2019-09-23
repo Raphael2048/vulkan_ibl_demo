@@ -117,8 +117,10 @@ private:
     VkRenderPass renderPass;
     VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
-    
+    struct {
+        VkPipeline pbr;
+        VkPipeline skybox;
+    } pipelines;
     VkCommandPool commandPool;
     
     struct {
@@ -154,7 +156,7 @@ private:
 
     struct {
 		vks::Buffer matrices;
-		// vks::Buffer skybox;
+		vks::Buffer skybox;
 		vks::Buffer params;
 	} uniformBuffers;
 
@@ -164,10 +166,15 @@ private:
         vks::Texture2D ao;
         vks::Texture2D metallic;
         vks::Texture2D roughness;
+        vks::TextureCubeMap environmentCube;
     } textures;
 
     VkDescriptorPool descriptorPool;
-    VkDescriptorSet descriptorSet;
+
+    struct {
+        VkDescriptorSet pbr;
+        VkDescriptorSet skybox; 
+    } descriptorSets;
     
     std::vector<VkCommandBuffer> commandBuffers;
     
@@ -242,7 +249,6 @@ private:
         vulkan_util::createImageViews(device, swapChainImageViews, swapChainImages, swapChainImageFormat);
         vulkan_util::createRenderPass(physicalDevice, device, swapChainImageFormat, renderPass);
         createDescriptorSetLayout();
-        //vulkan_util::createGraphicsPipeline(device, swapChainExtent, renderPass, "shaders/pbr_vert.spv", "shaders/pbr_frag.spv", Vertex::getBindingDescription(), Vertex::getAttributeDescriptions(), descriptorSetLayout, pipelineLayout, graphicsPipeline);
         vulkan_util::createDepthResources( physicalDevice,  device,  commandPool,  graphicsQueue, swapChainExtent, depthStencil.depthImageView, depthStencil.depthImage, depthStencil.depthImageMemory );
         vulkan_util::createFramebuffers(device, swapChainImageViews, depthStencil.depthImageView, renderPass, swapChainExtent, swapChainFramebuffers);
         createPipelineCache();
@@ -293,7 +299,7 @@ private:
         
         vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
         
-        vkDestroyPipeline(device, graphicsPipeline, nullptr);
+        vkDestroyPipeline(device, pipelines.pbr, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyRenderPass(device, renderPass, nullptr);
         
@@ -305,6 +311,7 @@ private:
         
         uniformBuffers.matrices.destroy();
         uniformBuffers.params.destroy();
+        uniformBuffers.skybox.destroy();
         textures.albedo.destroy();
         textures.normal.destroy();
         textures.ao.destroy();
@@ -354,6 +361,7 @@ private:
         textures.ao.loadFromFile("textures/ao.ktx", VK_FORMAT_R8_UNORM, vulkanDevice, graphicsQueue);
         textures.metallic.loadFromFile("textures/metallic.ktx", VK_FORMAT_R8_UNORM, vulkanDevice, graphicsQueue);
         textures.roughness.loadFromFile("textures/roughness.ktx", VK_FORMAT_R8_UNORM, vulkanDevice, graphicsQueue);
+        textures.environmentCube.loadFromFile("textures/gcanyon_cube.ktx", VK_FORMAT_R16G16B16A16_SFLOAT, vulkanDevice, graphicsQueue);
     }
   
     void createPipelineCache()
@@ -445,7 +453,7 @@ private:
 		// Skybox pipeline (background cube)
 		shaderStages[0] = loadShader("shaders/pbr_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader("shaders/pbr_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &graphicsPipeline));
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipelines.pbr));
     }
 
     void prepareUnifromBuffers() {
@@ -461,6 +469,12 @@ private:
 			&uniformBuffers.params,
 			sizeof(uboParams)));
         VK_CHECK_RESULT(uniformBuffers.params.map());
+        VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&uniformBuffers.skybox,
+			sizeof(uboMatrices)));
+        VK_CHECK_RESULT(uniformBuffers.skybox.map());
     }
 
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
@@ -517,14 +531,14 @@ private:
 			VkRect2D scissor = vks::initializers::rect2D(swapChainExtent.width, swapChainExtent.height,	0, 0);
 			vkCmdSetScissor(commandBuffers[i], 0, 1, &scissor);
 
-            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.pbr);
             
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &model.vertices.buffer, offsets);
             
             vkCmdBindIndexBuffer(commandBuffers[i], model.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
             
-            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets.pbr, 0, nullptr);
             
             vkCmdDrawIndexed(commandBuffers[i], model.indexCount, 1, 0, 0, 0);
             
@@ -657,13 +671,14 @@ private:
     void createDescriptorPool() {
         std::vector<VkDescriptorPoolSize> poolSizes =  {
             vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4),
-            vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4),
+            vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16),
         };
-        VkDescriptorPoolCreateInfo poolInfo = {};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-        poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+        VkDescriptorPoolCreateInfo poolInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 2);
+        // VkDescriptorPoolCreateInfo poolInfo = {};
+        // poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        // poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        // poolInfo.pPoolSizes = poolSizes.data();
+        // poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
         
         if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool!");
@@ -672,22 +687,27 @@ private:
 
     void createDescriptorSets() {
         VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayout, 1);
-        
-        //descriptorSets.resize(swapChainImages.size());
-        if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate descriptor sets!");
-        }        
+        //pbr
+        VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets.pbr));
         std::vector<VkWriteDescriptorSet> descriptorWrites = {
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &uniformBuffers.matrices.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &uniformBuffers.params.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.albedo.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &textures.normal.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, &textures.ao.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &textures.metallic.descriptor),
-            vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6, &textures.roughness.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &uniformBuffers.matrices.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &uniformBuffers.params.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.albedo.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &textures.normal.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, &textures.ao.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &textures.metallic.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6, &textures.roughness.descriptor),
         };
-
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+
+        //skybox
+        VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets.skybox));
+		descriptorWrites = {
+			vks::initializers::writeDescriptorSet(descriptorSets.skybox, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &uniformBuffers.skybox.descriptor),
+			vks::initializers::writeDescriptorSet(descriptorSets.skybox, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, &uniformBuffers.params.descriptor),
+			vks::initializers::writeDescriptorSet(descriptorSets.skybox, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.environmentCube.descriptor),
+		};
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 };
 
