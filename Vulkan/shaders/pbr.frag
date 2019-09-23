@@ -17,6 +17,7 @@ layout(binding = 3) uniform sampler2D normal;
 layout(binding = 4) uniform sampler2D ao;
 layout(binding = 5) uniform sampler2D metallic;
 layout(binding = 6) uniform sampler2D roughness;
+layout(binding = 7) uniform samplerCube irradianceCube;
 
 
 layout(location = 0) in vec3 fragPos;
@@ -128,7 +129,7 @@ void main() {
     //outColor = texture(albedo, fragTexCoord);
     vec3 N = perturbNormal();
     vec3 V = normalize(matrices.viewPos - fragPos);
-    vec3 sampleColor = pow(texture(albedo, fragTexCoord).rgb, vec3(2.2f));
+    vec3 sampleColor = ALBEDO;
     float aoValue = texture(ao, fragTexCoord).r;
     float metallicValue = texture(metallic, fragTexCoord).r;
     float roughnessValue = texture(metallic, fragTexCoord).r;
@@ -140,9 +141,15 @@ void main() {
         Lo += specularContribution(L, V, N, F0, metallicValue, roughnessValue);
 
     }
-    vec3 ambient = vec3(0.03) * sampleColor * aoValue;
-    vec3 color   = ambient + Lo;  
-    // vec3 color = sampleColor * (k + aoValue);
+	vec3 irradiance = texture(irradianceCube, N).rgb;
+	// Diffuse based on irradiance
+	vec3 diffuse = irradiance * sampleColor;	
+	vec3 F = F_SchlickR(max(dot(N, V), 0.0), F0, roughnessValue);
+	// Ambient part
+	vec3 kD = 1.0 - F;
+	kD *= 1.0 - metallicValue;
+    vec3 ambient = kD * diffuse * sampleColor * aoValue;
+    vec3 color   = ambient + Lo;
     color = Uncharted2Tonemap(color * params.exposure);
 	color = color * (1.0f / Uncharted2Tonemap(vec3(11.2f)));
     // color = color / (vec3(1.0) + color);
