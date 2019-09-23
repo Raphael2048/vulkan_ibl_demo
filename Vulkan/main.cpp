@@ -170,6 +170,8 @@ private:
         vks::Texture2D roughness;
         vks::TextureCubeMap environmentCube;
         vks::TextureCubeMap irradianceCube;
+        vks::Texture2D lutBrdf;
+        vks::TextureCubeMap prefilteredCube;
     } textures;
 
     VkDescriptorPool descriptorPool;
@@ -684,6 +686,7 @@ private:
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 4),
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 5),
             vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 6),
+            vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT , 7),
         };
         VkDescriptorSetLayoutCreateInfo descriptorLayout = 	vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);        
         if (vkCreateDescriptorSetLayout(device, &descriptorLayout, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
@@ -715,6 +718,7 @@ private:
             vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, &textures.ao.descriptor),
             vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &textures.metallic.descriptor),
             vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6, &textures.roughness.descriptor),
+            vks::initializers::writeDescriptorSet(descriptorSets.pbr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &textures.irradianceCube.descriptor),
         };
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
